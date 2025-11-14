@@ -1,15 +1,27 @@
 ﻿import eventlet
-eventlet.monkey_patch()  # 必須在最上面！
+eventlet.monkey_patch()
 
-from flask import Flask, render_template
-from flask_socketio import SocketIO, join_room, emit, send
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, join_room, emit
+import redis
+import json
 import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'test-secret'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-rooms = {}
+# 連線 Redis
+r = redis.from_url(os.environ.get('REDIS_URL', 'redis://localhost:6379'))
+
+ROOMS_KEY = 'multiplayer:rooms'
+
+def get_rooms():
+    data = r.get(ROOMS_KEY)
+    return json.loads(data) if data else {}
+
+def save_rooms(rooms):
+    r.set(ROOMS_KEY, json.dumps(rooms))
 
 @app.route('/')
 def index():
@@ -23,14 +35,15 @@ def on_join(data):
     
     join_room(room)
     
+    rooms = get_rooms()
     if room not in rooms:
         rooms[room] = {}
     
-    # 移除舊用戶（同名）
+    # 移除舊用戶
     rooms[room] = {k: v for k, v in rooms[room].items() if v != username}
-    rooms[room][sid] = username  # 用 sid 當 key
+    rooms[room][sid] = username
+    save_rooms(rooms)
     
-    # 廣播給整個房間（包含自己）
     emit('user_list', list(rooms[room].values()), room=room)
     emit('status', f'{username} 加入了房間！', room=room)
 
@@ -39,12 +52,14 @@ def on_message(data):
     room = data.get('room')
     msg = data.get('message')
     username = data.get('username')
+    rooms = get_rooms()
     if room in rooms:
         emit('new_message', {'username': username, 'message': msg}, room=room)
 
 @socketio.on('disconnect')
 def on_disconnect():
     sid = request.sid
+    rooms = get_rooms()
     for room in list(rooms.keys()):
         if sid in rooms[room]:
             username = rooms[room].pop(sid)
@@ -52,6 +67,7 @@ def on_disconnect():
                 del rooms[room]
             else:
                 emit('user_list', list(rooms[room].values()), room=room)
+            save_rooms(rooms)
             break
 
 if __name__ == '__main__':
