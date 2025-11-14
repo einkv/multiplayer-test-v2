@@ -1,61 +1,127 @@
 ﻿<!DOCTYPE html>
 <html>
 <head>
-  <title>4人即時聊天</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <title>4人撲克牌大戰</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; font-family:Arial; }
+    body { background:#0a5; color:white; }
+    .container { max-width:1000px; margin:auto; padding:20px; }
+    h1 { text-align:center; margin-bottom:20px; }
+    .setup, .game { background:rgba(0,0,0,0.7); padding:20px; border-radius:15px; margin-bottom:20px; }
+    input, button { padding:10px; margin:5px; font-size:16px; border-radius:8px; }
+    button { background:#ff6; color:#000; border:none; cursor:pointer; }
+    button:hover { background:#ff0; }
+    .players { display:flex; justify-content:space-around; margin:20px 0; }
+    .player { text-align:center; padding:10px; background:rgba(255,255,255,0.2); border-radius:10px; width:22%; }
+    .hand { display:flex; flex-wrap:wrap; gap:5px; margin:20px 0; justify-content:center; }
+    .card { width:60px; height:90px; background:white; color:black; border-radius:8px; display:flex; flex-direction:column; justify-content:center; align-items:center; font-weight:bold; cursor:pointer; box-shadow:0 2px 5px rgba(0,0,0,0.5); }
+    .card:hover { transform:translateY(-5px); }
+    .played { text-align:center; margin:20px 0; }
+    .status { text-align:center; font-size:18px; margin:10px 0; }
+    .hidden { display:none; }
+  </style>
 </head>
 <body>
   <div class="container">
-    <h1>多人即時聊天測試</h1>
-    <div class="input-group">
-      <input type="text" id="username" placeholder="名字" value="玩家1">
-      <input type="text" id="room" placeholder="房間" value="test123">
-      <button onclick="joinRoom()">加入</button>
+    <h1>4人撲克牌大戰</h1>
+
+    <!-- 加入房間 -->
+    <div id="setup" class="setup">
+      <input type="text" id="username" placeholder="你的名字" value="玩家1">
+      <input type="text" id="room" placeholder="房間名稱" value="撲克房">
+      <button onclick="createRoom()">建立房間</button>
+      <button onclick="joinRoom()">加入房間</button>
     </div>
-    <div id="chat-box"></div>
-    <div class="input-group">
-      <input type="text" id="message" placeholder="輸入訊息..." onkeypress="if(event.key==='Enter') sendMessage()">
-      <button onclick="sendMessage()">發送</button>
+
+    <!-- 遊戲畫面 -->
+    <div id="game" class="game hidden">
+      <div class="status" id="status">等待其他玩家...</div>
+      <div class="players" id="players"></div>
+      <div class="played" id="played"></div>
+      <div class="hand" id="hand"></div>
+      <button id="readyBtn" onclick="ready()">準備</button>
     </div>
-    <div id="users">在線：0 人</div>
   </div>
 
   <script>
     const socket = io();
-    let currentRoom = '', username = '';
+    let mySid = '', room = '', username = '';
+
+    function createRoom() {
+      username = document.getElementById('username').value.trim() || '玩家1';
+      room = document.getElementById('room').value.trim() || '撲克房';
+      socket.emit('create_room', { username, room });
+    }
 
     function joinRoom() {
-      username = document.getElementById('username').value.trim() || '匿名';
-      currentRoom = document.getElementById('room').value.trim() || 'test123';
-      socket.emit('join', { username, room: currentRoom });
+      username = document.getElementById('username').value.trim() || '玩家1';
+      room = document.getElementById('room').value.trim() || '撲克房';
+      socket.emit('join_room', { username, room });
     }
 
-    function sendMessage() {
-      const msg = document.getElementById('message').value.trim();
-      if (!msg || !currentRoom) return;
-      socket.emit('send_message', { username, room: currentRoom, message: msg });
-      document.getElementById('message').value = '';
+    function ready() {
+      socket.emit('ready');
+      document.getElementById('readyBtn').disabled = true;
     }
 
-    function addMessage(user, text) {
-      const div = document.createElement('div');
-      div.className = 'message';
-      div.innerHTML = `<strong>${user}:</strong> ${text}`;
-      document.getElementById('chat-box').appendChild(div);
-      div.scrollIntoView();
+    function playCard(card) {
+      socket.emit('play_card', { card, room });
     }
 
-    // 關鍵！接收 user_list
-    socket.on('user_list', names => {
-      document.getElementById('users').innerText = `在線：${names.length} 人 (${names.join(', ')})`;
+    // 接收事件
+    socket.on('room_created', data => {
+      document.getElementById('setup').classList.add('hidden');
+      document.getElementById('game').classList.remove('hidden');
+      updatePlayers(data.players);
     });
 
-    socket.on('status', msg => addMessage('系統', msg));
-    socket.on('new_message', data => addMessage(data.username, data.message));
+    socket.on('joined', data => {
+      document.getElementById('setup').classList.add('hidden');
+      document.getElementById('game').classList.remove('hidden');
+      updatePlayers(data.players);
+    });
 
-    // 自動加入
-    window.onload = () => setTimeout(joinRoom, 500);
+    socket.on('hand', cards => {
+      const handDiv = document.getElementById('hand');
+      handDiv.innerHTML = '';
+      cards.forEach(card => {
+        const div = document.createElement('div');
+        div.className = 'card';
+        div.textContent = card;
+        div.onclick = () => playCard(card);
+        handDiv.appendChild(div);
+      });
+    });
+
+    socket.on('players_update', players => updatePlayers(players));
+    socket.on('game_start', data => {
+      document.getElementById('status').textContent = `遊戲開始！輪到 ${data.current_player}`;
+      document.getElementById('readyBtn').classList.add('hidden');
+    });
+
+    socket.on('card_played', data => {
+      const played = document.getElementById('played');
+      played.innerHTML += `<div>${data.player} 出了 ${data.card} (剩 ${data.remaining} 張)</div>`;
+    });
+
+    socket.on('next_turn', data => {
+      document.getElementById('status').textContent = `輪到 ${data.current_player}`;
+    });
+
+    socket.on('error', msg => alert(msg));
+
+    function updatePlayers(players) {
+      const div = document.getElementById('players');
+      div.innerHTML = '';
+      players.forEach(p => {
+        const pd = document.createElement('div');
+        pd.className = 'player';
+        pd.innerHTML = `<div>${p.name}</div><div>${p.ready ? '已準備' : '未準備'}</div>`;
+        div.appendChild(pd);
+      });
+    }
   </script>
 </body>
 </html>
