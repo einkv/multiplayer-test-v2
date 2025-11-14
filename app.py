@@ -1,9 +1,9 @@
-﻿from flask import Flask, render_template, request
-from flask_socketio import SocketIO, join_room, emit
-import os
-import eventlet
+﻿import eventlet
+eventlet.monkey_patch()  # 必須在最上面！
 
-eventlet.monkey_patch()  # 關鍵！修復 worker timeout
+from flask import Flask, render_template
+from flask_socketio import SocketIO, join_room, emit, send
+import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'test-secret'
@@ -24,17 +24,15 @@ def on_join(data):
     join_room(room)
     
     if room not in rooms:
-        rooms[room] = []
+        rooms[room] = {}
     
-    # 移除舊的同名用戶
-    rooms[room] = [u for u in rooms[room] if u['name'] != username]
+    # 移除舊用戶（同名）
+    rooms[room] = {k: v for k, v in rooms[room].items() if v != username}
+    rooms[room][sid] = username  # 用 sid 當 key
     
-    # 加入新用戶
-    rooms[room].append({'name': username, 'sid': sid})
-    
-    # 廣播給房間所有人
-    emit('status', f'{username} 加入房間！', room=room)
-    emit('user_list', [u['name'] for u in rooms[room]], room=room, include_self=True)
+    # 廣播給整個房間（包含自己）
+    emit('user_list', list(rooms[room].values()), room=room)
+    emit('status', f'{username} 加入了房間！', room=room)
 
 @socketio.on('send_message')
 def on_message(data):
@@ -48,13 +46,13 @@ def on_message(data):
 def on_disconnect():
     sid = request.sid
     for room in list(rooms.keys()):
-        before_count = len(rooms[room])
-        rooms[room] = [u for u in rooms[room] if u['sid'] != sid]
-        if len(rooms[room]) < before_count:  # 有人離開
-            if rooms[room]:
-                emit('user_list', [u['name'] for u in rooms[room]], room=room)
-            else:
+        if sid in rooms[room]:
+            username = rooms[room].pop(sid)
+            if not rooms[room]:
                 del rooms[room]
+            else:
+                emit('user_list', list(rooms[room].values()), room=room)
+            break
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))

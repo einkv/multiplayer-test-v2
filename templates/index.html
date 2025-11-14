@@ -1,7 +1,7 @@
 ﻿<!DOCTYPE html>
 <html>
 <head>
-  <title>4人即時測試</title>
+  <title>4人即時聊天</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
@@ -29,7 +29,6 @@
       username = document.getElementById('username').value.trim() || '匿名';
       currentRoom = document.getElementById('room').value.trim() || 'test123';
       socket.emit('join', { username, room: currentRoom });
-      addMessage('系統', `你已加入房間：${currentRoom}`);
     }
 
     function sendMessage() {
@@ -47,13 +46,15 @@
       div.scrollIntoView();
     }
 
-    // 接收事件
-    socket.on('status', msg => addMessage('系統', msg));
-    socket.on('new_message', data => addMessage(data.username, data.message));
+    // 關鍵！接收 user_list
     socket.on('user_list', names => {
       document.getElementById('users').innerText = `在線：${names.length} 人 (${names.join(', ')})`;
     });
 
+    socket.on('status', msg => addMessage('系統', msg));
+    socket.on('new_message', data => addMessage(data.username, data.message));
+
+    // 自動加入
     window.onload = () => setTimeout(joinRoom, 500);
   </script>
 </body>
