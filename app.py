@@ -1,5 +1,5 @@
-﻿from flask import Flask, render_template
-from flask_socketio import SocketIO, join_room, emit, request
+﻿from flask import Flask, render_template, request  # request 從 flask 匯入！
+from flask_socketio import SocketIO, join_room, emit
 import os
 
 app = Flask(__name__)
