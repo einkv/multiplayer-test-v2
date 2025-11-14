@@ -29,7 +29,7 @@
       username = document.getElementById('username').value.trim() || '匿名';
       currentRoom = document.getElementById('room').value.trim() || 'test123';
       socket.emit('join', { username, room: currentRoom });
-      addMessage('系統', `已加入房間：${currentRoom}`);
+      addMessage('系統', `你已加入房間：${currentRoom}`);
     }
 
     function sendMessage() {
@@ -47,10 +47,11 @@
       div.scrollIntoView();
     }
 
-    socket.on('status', data => addMessage('系統', data.msg));
+    // 接收事件
+    socket.on('status', msg => addMessage('系統', msg));
     socket.on('new_message', data => addMessage(data.username, data.message));
-    socket.on('user_list', users => {
-      document.getElementById('users').innerText = `在線：${users.length} 人`;
+    socket.on('user_list', names => {
+      document.getElementById('users').innerText = `在線：${names.length} 人 (${names.join(', ')})`;
     });
 
     window.onload = () => setTimeout(joinRoom, 500);
