@@ -1,0 +1,7 @@
+﻿services:
+  - type: web
+    name: multiplayer-test-v2
+    env: python
+    pythonVersion: "3.11"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app --worker-class eventlet -w 1"
